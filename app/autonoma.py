@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,22 +13,28 @@ import plotly.express as px
 import streamlit as st
 
 from src.core.models import ExceptionType
+from src.i18n.translations import get_translator
 from src.ingestion.generator import generate_dataset
 from src.rules.engine import detect_all
 from src.rules.loop import apply_rules, automation_rate
 from src.rules.models import Rule, RuleType
 from src.rules.store import RuleStore
+from src.ui.theme import inject_theme, render_hud
 
 st.set_page_config(
     page_title="Autonoma — Autonomous Accounts Payable",
-    page_icon="🤖",
+    page_icon="◆",
     layout="wide",
 )
 
+inject_theme()
 
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
+
+if "lang" not in st.session_state:
+    st.session_state.lang = "EN"
 
 if "dataset" not in st.session_state:
     st.session_state.dataset = generate_dataset(n_invoices=250, seed=42)
@@ -38,12 +43,16 @@ if "store" not in st.session_state:
     st.session_state.store = RuleStore(path=Path("data/rules.json"))
 
 if "history" not in st.session_state:
-    st.session_state.history = [
-        {"step": "Baseline", "rate": None}
-    ]
+    st.session_state.history = [{"step": "Baseline", "rate": None}]
+
+if "toast" not in st.session_state:
+    st.session_state.toast = None
 
 ds = st.session_state.dataset
 store: RuleStore = st.session_state.store
+
+lang = st.session_state.lang
+t = get_translator(lang)
 
 raw_exceptions = detect_all(
     ds["invoices"], ds["suppliers"], ds["purchase_orders"], ds["goods_receipts"]
@@ -53,31 +62,75 @@ surviving, resolved = apply_rules(raw_exceptions, store.all())
 rate_now = automation_rate(ds["invoices"], surviving)
 baseline = automation_rate(ds["invoices"], raw_exceptions)
 
-# Record history points on rule changes
 if st.session_state.history[0]["rate"] is None:
     st.session_state.history[0]["rate"] = baseline
-if (
-    len(st.session_state.history) > 1
-    and st.session_state.history[-1]["rate"] == rate_now
-):
-    pass
-elif st.session_state.history[-1]["rate"] != rate_now:
+if st.session_state.history[-1]["rate"] != rate_now:
     st.session_state.history.append(
         {"step": f"Step {len(st.session_state.history)}", "rate": rate_now}
     )
 
+# ---------------------------------------------------------------------------
+# Header — HUD + language toggle
+# ---------------------------------------------------------------------------
+
+head_left, head_right = st.columns([6, 1])
+with head_left:
+    render_hud(tag=t("hud.tag"), status=t("hud.status"))
+with head_right:
+    choice = st.radio(
+        "lang",
+        options=["EN", "DE"],
+        index=0 if lang == "EN" else 1,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="lang_radio",
+    )
+    if choice != lang:
+        st.session_state.lang = choice
+        st.rerun()
+
+st.write("")
+st.caption(t("app.caption"))
 
 # ---------------------------------------------------------------------------
-# Rule construction helpers (UI concerns)
+# Metric row
 # ---------------------------------------------------------------------------
 
-def _mk_rule(
-    rtype: RuleType,
-    target: dict,
-    payload: dict,
-    source_ex: "object",
-    rationale: str,
-) -> Rule:
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric(
+    t("metric.automation_rate"),
+    f"{rate_now:.1f}%",
+    f"+{rate_now - baseline:.1f}% {t('metric.vs_baseline')}",
+    help=t("metric.automation_rate_help"),
+)
+c2.metric(
+    t("metric.open_exceptions"),
+    len(surviving),
+    help=t("metric.open_exceptions_help"),
+)
+c3.metric(
+    t("metric.resolved"),
+    len(resolved),
+    help=t("metric.resolved_help"),
+)
+c4.metric(
+    t("metric.rules"),
+    len(store),
+    help=t("metric.rules_help"),
+)
+c5.metric(
+    t("metric.invoices"),
+    len(ds["invoices"]),
+    help=t("metric.invoices_help"),
+)
+
+st.write("")
+
+# ---------------------------------------------------------------------------
+# Rule construction helpers
+# ---------------------------------------------------------------------------
+
+def _mk_rule(rtype: RuleType, target: dict, payload: dict, source_ex, rationale: str) -> Rule:
     return Rule(
         rule_id=f"RULE-{uuid.uuid4().hex[:8].upper()}",
         type=rtype,
@@ -91,271 +144,145 @@ def _mk_rule(
 
 
 def _answer_options(ex):
-    t = ex.type
+    t_ = ex.type
     sid = ex.detail.get("supplier_id")
     po = ex.detail.get("po_number")
 
-    if t == ExceptionType.TAX_AMBIGUITY:
+    if t_ == ExceptionType.TAX_AMBIGUITY:
         expected = float(ex.detail.get("expected_vat", 0))
         actual = float(ex.detail.get("actual_vat", 0))
         return [
-            (
-                f"Use {expected*100:.1f}% going forward",
-                lambda e: _mk_rule(
-                    RuleType.SUPPLIER_VAT,
-                    {"supplier_id": sid},
-                    {"vat_rate": expected},
-                    e,
-                    f"Confirmed expected VAT {expected*100:.1f}% for {e.detail.get('supplier_name')}",
-                ),
-            ),
-            (
-                f"Keep {actual*100:.1f}% going forward",
-                lambda e: _mk_rule(
-                    RuleType.SUPPLIER_VAT,
-                    {"supplier_id": sid},
-                    {"vat_rate": actual},
-                    e,
-                    f"Confirmed actual VAT {actual*100:.1f}% for {e.detail.get('supplier_name')}",
-                ),
-            ),
+            (f"Use {expected*100:.1f}%",
+             lambda e: _mk_rule(RuleType.SUPPLIER_VAT, {"supplier_id": sid}, {"vat_rate": expected}, e,
+                                f"Confirmed VAT {expected*100:.1f}% for {e.detail.get('supplier_name')}")),
+            (f"Keep {actual*100:.1f}%",
+             lambda e: _mk_rule(RuleType.SUPPLIER_VAT, {"supplier_id": sid}, {"vat_rate": actual}, e,
+                                f"Confirmed VAT {actual*100:.1f}% for {e.detail.get('supplier_name')}")),
         ]
-
-    if t == ExceptionType.DUPLICATE:
+    if t_ == ExceptionType.DUPLICATE:
         return [
-            (
-                "Block as duplicate",
-                lambda e: _mk_rule(
-                    RuleType.DUPLICATE_BLOCK,
-                    {"invoice_id": e.invoice_id},
-                    {},
-                    e,
-                    "Confirmed duplicate — blocked from payment",
-                ),
-            ),
-            (
-                "Not a duplicate — whitelist supplier",
-                lambda e: _mk_rule(
-                    RuleType.DUPLICATE_WHITELIST,
-                    {"supplier_id": sid},
-                    {},
-                    e,
-                    f"Legitimate split invoices from {e.detail.get('supplier_name')}",
-                ),
-            ),
+            ("Block as duplicate",
+             lambda e: _mk_rule(RuleType.DUPLICATE_BLOCK, {"invoice_id": e.invoice_id}, {}, e,
+                                "Confirmed duplicate — blocked from payment")),
+            ("Not a duplicate — whitelist supplier",
+             lambda e: _mk_rule(RuleType.DUPLICATE_WHITELIST, {"supplier_id": sid}, {}, e,
+                                f"Legitimate split invoices from {e.detail.get('supplier_name')}")),
         ]
-
-    if t == ExceptionType.MISSING_PO:
+    if t_ == ExceptionType.MISSING_PO:
         return [
-            (
-                "Exempt this supplier from PO requirement",
-                lambda e: _mk_rule(
-                    RuleType.PO_EXEMPTION,
-                    {"supplier_id": sid},
-                    {},
-                    e,
-                    f"{e.detail.get('supplier_name')} does not require a PO",
-                ),
-            ),
-            (
-                "Release this invoice once",
-                lambda e: _mk_rule(
-                    RuleType.INVOICE_RELEASED,
-                    {"invoice_id": e.invoice_id},
-                    {},
-                    e,
-                    "One-off release without PO",
-                ),
-            ),
+            ("Exempt supplier from PO requirement",
+             lambda e: _mk_rule(RuleType.PO_EXEMPTION, {"supplier_id": sid}, {}, e,
+                                f"{e.detail.get('supplier_name')} does not require a PO")),
+            ("Release invoice once",
+             lambda e: _mk_rule(RuleType.INVOICE_RELEASED, {"invoice_id": e.invoice_id}, {}, e,
+                                "One-off release without PO")),
         ]
-
-    if t == ExceptionType.PRICE_MISMATCH:
+    if t_ == ExceptionType.PRICE_MISMATCH:
         return [
-            (
-                "Accept invoice amount for this PO",
-                lambda e: _mk_rule(
-                    RuleType.PRICE_TOLERANCE,
-                    {"po_number": po},
-                    {},
-                    e,
-                    f"Invoice amount accepted for {po}",
-                ),
-            ),
-            (
-                "Use PO amount",
-                lambda e: _mk_rule(
-                    RuleType.PRICE_TOLERANCE,
-                    {"po_number": po},
-                    {},
-                    e,
-                    f"PO amount confirmed for {po}",
-                ),
-            ),
+            ("Accept invoice amount",
+             lambda e: _mk_rule(RuleType.PRICE_TOLERANCE, {"po_number": po}, {}, e,
+                                f"Invoice amount accepted for {po}")),
+            ("Use PO amount",
+             lambda e: _mk_rule(RuleType.PRICE_TOLERANCE, {"po_number": po}, {}, e,
+                                f"PO amount confirmed for {po}")),
         ]
-
-    if t == ExceptionType.IBAN_CHANGE:
+    if t_ == ExceptionType.IBAN_CHANGE:
         return [
-            (
-                "Approve new IBAN",
-                lambda e: _mk_rule(
-                    RuleType.IBAN_APPROVAL,
-                    {"supplier_id": sid},
-                    {"iban": e.detail.get("invoice_iban")},
-                    e,
-                    f"New IBAN approved for {e.detail.get('supplier_name')}",
-                ),
-            ),
-            (
-                "Reject — keep master IBAN",
-                lambda e: _mk_rule(
-                    RuleType.INVOICE_RELEASED,
-                    {"invoice_id": e.invoice_id},
-                    {},
-                    e,
-                    "IBAN change rejected — master IBAN retained",
-                ),
-            ),
+            ("Approve new IBAN",
+             lambda e: _mk_rule(RuleType.IBAN_APPROVAL, {"supplier_id": sid}, {"iban": e.detail.get("invoice_iban")}, e,
+                                f"New IBAN approved for {e.detail.get('supplier_name')}")),
+            ("Reject — keep master IBAN",
+             lambda e: _mk_rule(RuleType.INVOICE_RELEASED, {"invoice_id": e.invoice_id}, {}, e,
+                                "IBAN change rejected — master IBAN retained")),
         ]
-
-    if t == ExceptionType.MISSING_GRN:
+    if t_ == ExceptionType.MISSING_GRN:
         return [
-            (
-                "Exempt this PO from GRN requirement",
-                lambda e: _mk_rule(
-                    RuleType.GRN_EXEMPTION,
-                    {"po_number": po},
-                    {},
-                    e,
-                    f"{po} does not require GRN",
-                ),
-            ),
-            (
-                "Release once",
-                lambda e: _mk_rule(
-                    RuleType.INVOICE_RELEASED,
-                    {"invoice_id": e.invoice_id},
-                    {},
-                    e,
-                    "One-off release without GRN",
-                ),
-            ),
+            ("Exempt PO from GRN",
+             lambda e: _mk_rule(RuleType.GRN_EXEMPTION, {"po_number": po}, {}, e,
+                                f"{po} does not require GRN")),
+            ("Release once",
+             lambda e: _mk_rule(RuleType.INVOICE_RELEASED, {"invoice_id": e.invoice_id}, {}, e,
+                                "One-off release without GRN")),
         ]
-
     return [
-        (
-            "Release once",
-            lambda e: _mk_rule(
-                RuleType.INVOICE_RELEASED,
-                {"invoice_id": e.invoice_id},
-                {},
-                e,
-                "One-off release",
-            ),
-        )
+        ("Release once",
+         lambda e: _mk_rule(RuleType.INVOICE_RELEASED, {"invoice_id": e.invoice_id}, {}, e,
+                            "One-off release")),
     ]
 
 
 # ---------------------------------------------------------------------------
-# Header
+# Tabs
 # ---------------------------------------------------------------------------
 
-st.title("Autonoma")
-st.caption(
-    "Autonomous Accounts Payable for DACH — turn every invoice exception "
-    "into a permanent rule."
-)
-
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Automation Rate", f"{rate_now:.1f}%", f"+{rate_now - baseline:.1f}% vs baseline")
-c2.metric("Open Exceptions", len(surviving))
-c3.metric("Resolved by Rules", len(resolved))
-c4.metric("Rules Learned", len(store))
-c5.metric("Invoices Processed", len(ds["invoices"]))
-
-st.divider()
-
-tab_dash, tab_queue, tab_rules, tab_insights = st.tabs(
-    ["Dashboard", "Exception Queue", "Rules Learned", "Supplier Insights"]
-)
+tab_dash, tab_queue, tab_rules, tab_insights, tab_report = st.tabs([
+    t("tab.dashboard"), t("tab.queue"), t("tab.rules"), t("tab.insights"), t("tab.report"),
+])
 
 
-# ---------------------------------------------------------------------------
-# Tab 1 — Dashboard
-# ---------------------------------------------------------------------------
-
+# ---------- Dashboard ----------
 with tab_dash:
     left, right = st.columns([2, 1])
-
     with left:
-        st.subheader("Automation Rate Progression")
+        st.subheader(t("dash.progression"))
         hist_df = pd.DataFrame(st.session_state.history)
-        fig = px.line(
-            hist_df,
-            x="step",
-            y="rate",
-            markers=True,
-        )
-        fig.update_yaxes(range=[0, 100], ticksuffix="%", title="Automation Rate")
+        fig = px.line(hist_df, x="step", y="rate", markers=True)
+        fig.update_yaxes(range=[0, 100], ticksuffix="%")
         fig.update_xaxes(title="")
+        fig.update_traces(line=dict(color="#00E5FF", width=3), marker=dict(size=9, color="#00FF9C"))
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#DCE6F2", family="JetBrains Mono"),
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     with right:
-        st.subheader("Exception Mix (open)")
+        st.subheader(t("dash.mix"))
         if surviving:
-            counts = {}
+            counts: dict[str, int] = {}
             for ex in surviving:
                 counts[ex.type.value] = counts.get(ex.type.value, 0) + 1
-            mix = pd.DataFrame(
-                sorted(counts.items(), key=lambda kv: -kv[1]),
-                columns=["Type", "Count"],
-            )
+            mix = pd.DataFrame(sorted(counts.items(), key=lambda kv: -kv[1]), columns=["Type", "Count"])
             st.dataframe(mix, use_container_width=True, hide_index=True)
         else:
-            st.success("No open exceptions.")
+            st.success(t("dash.no_open"))
 
-    st.subheader("Rule Impact")
+    st.subheader(t("dash.rule_impact"))
     if resolved:
         impact: dict[str, int] = {}
         for ex, rule in resolved:
             impact[rule.type.value] = impact.get(rule.type.value, 0) + 1
-        impact_df = pd.DataFrame(
-            sorted(impact.items(), key=lambda kv: -kv[1]),
-            columns=["Rule Type", "Exceptions Auto-Resolved"],
+        st.dataframe(
+            pd.DataFrame(sorted(impact.items(), key=lambda kv: -kv[1]),
+                         columns=["Rule Type", "Auto-Resolved"]),
+            use_container_width=True, hide_index=True,
         )
-        st.dataframe(impact_df, use_container_width=True, hide_index=True)
     else:
-        st.info("No rules yet. Go to Exception Queue and answer a question.")
+        st.info(t("dash.rule_impact_empty"))
 
 
-# ---------------------------------------------------------------------------
-# Tab 2 — Exception Queue
-# ---------------------------------------------------------------------------
-
+# ---------- Exception Queue ----------
 with tab_queue:
-    st.subheader(f"Open Exceptions ({len(surviving)})")
-
+    st.subheader(f"{t('queue.title')} · {len(surviving)}")
     if not surviving:
-        st.success("Every exception is resolved by rules. Automation rate is 100%.")
+        st.success(t("queue.empty"))
     else:
         sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-        sorted_ex = sorted(
-            surviving, key=lambda e: (sev_order.get(e.severity.value, 9), e.type.value)
-        )
-
+        sorted_ex = sorted(surviving, key=lambda e: (sev_order.get(e.severity.value, 9), e.type.value))
         sev_icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
 
         for i, ex in enumerate(sorted_ex):
             icon = sev_icons.get(ex.severity.value, "⚪")
             header = (
-                f"{icon} **{ex.type.value.replace('_', ' ').title()}** — "
+                f"{icon} {ex.type.value.replace('_', ' ').title()} — "
                 f"{ex.detail.get('supplier_name', ex.invoice_id)}"
             )
             with st.expander(header, expanded=False):
-                st.markdown(f"**Invoice:** `{ex.invoice_id}`")
-                st.markdown(f"**Message:** {ex.message}")
+                st.markdown(f"**{t('queue.invoice')}:** `{ex.invoice_id}`")
+                st.markdown(f"**{t('queue.message')}:** {ex.message}")
                 if ex.resolution_question:
-                    st.markdown(f"**Question:** *{ex.resolution_question}*")
-
+                    st.markdown(f"**{t('queue.question')}:** *{ex.resolution_question}*")
                 options = _answer_options(ex)
                 cols = st.columns(len(options))
                 for j, (label, factory) in enumerate(options):
@@ -363,84 +290,104 @@ with tab_queue:
                         rule = factory(ex)
                         store.add(rule)
                         store.save()
+                        st.toast(f"✓ {t('toast.rule_learned')}: {rule.rationale}")
                         st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Tab 3 — Rules Learned
-# ---------------------------------------------------------------------------
-
+# ---------- Rules Learned ----------
 with tab_rules:
-    st.subheader(f"Rules Learned ({len(store)})")
-
+    st.subheader(f"{t('rules.title')} · {len(store)}")
     if len(store) == 0:
-        st.info("No rules yet.")
+        st.info(t("rules.empty"))
     else:
         rules = store.all()
-        rules_df = pd.DataFrame(
-            [
+        st.dataframe(
+            pd.DataFrame([
                 {
-                    "Rule ID": r.rule_id,
-                    "Type": r.type.value,
-                    "Target": ", ".join(f"{k}={v}" for k, v in r.target.items()),
-                    "Rationale": r.rationale,
-                    "Created": r.created_at.strftime("%Y-%m-%d %H:%M"),
+                    t("rules.col_id"): r.rule_id,
+                    t("rules.col_type"): r.type.value,
+                    t("rules.col_target"): ", ".join(f"{k}={v}" for k, v in r.target.items()),
+                    t("rules.col_rationale"): r.rationale,
+                    t("rules.col_created"): r.created_at.strftime("%Y-%m-%d %H:%M"),
                 }
                 for r in rules
-            ]
+            ]),
+            use_container_width=True, hide_index=True,
         )
-        st.dataframe(rules_df, use_container_width=True, hide_index=True)
-
         st.divider()
-        st.subheader("Remove a rule")
+        st.subheader(t("rules.remove_title"))
         to_remove = st.selectbox(
-            "Select a rule to delete",
+            t("rules.col_id"),
             options=[r.rule_id for r in rules],
-            format_func=lambda rid: next(
-                f"{rid} — {r.rationale}" for r in rules if r.rule_id == rid
-            ),
+            format_func=lambda rid: next(f"{rid} — {r.rationale}" for r in rules if r.rule_id == rid),
         )
-        if st.button("Delete rule"):
+        if st.button(t("rules.remove_btn")):
             store.remove(to_remove)
             store.save()
+            st.toast(f"✓ {t('toast.rule_removed')}")
             st.rerun()
 
         st.divider()
-        if st.button("Reset all rules"):
+        if st.button(t("rules.reset_btn")):
             store.clear()
             store.save()
+            st.toast(f"✓ {t('toast.rules_reset')}")
             st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Tab 4 — Supplier Insights
-# ---------------------------------------------------------------------------
-
+# ---------- Supplier Insights ----------
 with tab_insights:
-    st.subheader("Where automation is leaking")
-
+    st.subheader(t("insights.title"))
     if not surviving:
-        st.success("No open exceptions to analyze.")
+        st.success(t("insights.empty"))
     else:
         by_supplier: dict[str, int] = {}
         for ex in surviving:
             name = ex.detail.get("supplier_name", "Unknown")
             by_supplier[name] = by_supplier.get(name, 0) + 1
-
         top = sorted(by_supplier.items(), key=lambda kv: -kv[1])[:15]
         df = pd.DataFrame(top, columns=["Supplier", "Open Exceptions"])
-
-        fig = px.bar(
-            df,
-            x="Open Exceptions",
-            y="Supplier",
-            orientation="h",
-            title="Top suppliers by open exceptions",
+        fig = px.bar(df, x="Open Exceptions", y="Supplier", orientation="h",
+                     title=t("insights.chart_title"))
+        fig.update_traces(marker_color="#00E5FF")
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#DCE6F2", family="JetBrains Mono"),
+            yaxis=dict(autorange="reversed"),
         )
-        fig.update_layout(yaxis=dict(autorange="reversed"))
         st.plotly_chart(fig, use_container_width=True)
+        st.caption(t("insights.caption"))
 
-        st.caption(
-            "Suppliers at the top of this list are where a rule, a master data fix, "
-            "or a department conversation will unlock the most automation."
+
+# ---------- Sprint Report ----------
+with tab_report:
+    from src.reports.sprint import build_report
+
+    st.subheader(t("report.title"))
+    st.caption(t("report.caption"))
+
+    report = build_report(
+        invoices=ds["invoices"],
+        baseline_exceptions=raw_exceptions,
+        open_exceptions=surviving,
+        resolved=resolved,
+        rules=store.all(),
+    )
+
+    cA, cB, cC, cD = st.columns(4)
+    cA.metric(t("report.baseline"), f"{report.baseline_rate:.1f}%")
+    cB.metric(t("report.current"), f"{report.current_rate:.1f}%", f"{report.delta:+.1f}%")
+    cC.metric(t("report.rules_learned"), len(report.rules))
+    cD.metric(t("report.resolved"), len(report.resolved))
+
+    st.divider()
+    if st.button(t("report.generate")):
+        md = report.to_markdown()
+        st.download_button(
+            label=t("report.download"),
+            data=md,
+            file_name=f"autonoma-sprint-{report.generated_at.strftime('%Y%m%d-%H%M')}.md",
+            mime="text/markdown",
         )
+    st.markdown(report.to_markdown())
