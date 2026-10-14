@@ -40,7 +40,45 @@ if "dataset" not in st.session_state:
     st.session_state.dataset = generate_dataset(n_invoices=250, seed=42)
 
 if "store" not in st.session_state:
-    st.session_state.store = RuleStore(path=Path("data/rules.json"))
+    store = RuleStore(path=Path("data/rules.json"))
+    if len(store) == 0:
+        # Seed a plausible mid-flight state: rules learned in a prior sprint.
+        from src.rules.models import Rule, RuleType
+
+        demo_rules = [
+            Rule(
+                rule_id="RULE-DEMO001",
+                type=RuleType.PO_EXEMPTION,
+                target={"supplier_id": "SUP0021"},
+                payload={},
+                rationale="Bexio AG is on a recurring subscription — PO not required.",
+            ),
+            Rule(
+                rule_id="RULE-DEMO002",
+                type=RuleType.PO_EXEMPTION,
+                target={"supplier_id": "SUP0022"},
+                payload={},
+                rationale="Abacus Research AG — annual license, no PO raised.",
+            ),
+            Rule(
+                rule_id="RULE-DEMO003",
+                type=RuleType.GRN_EXEMPTION,
+                target={"po_number": "PO000007"},
+                payload={},
+                rationale="PO000007 is a services PO — no goods receipt expected.",
+            ),
+            Rule(
+                rule_id="RULE-DEMO004",
+                type=RuleType.SUPPLIER_VAT,
+                target={"supplier_id": "SUP0011"},
+                payload={"vat_rate": 0.19},
+                rationale="Wolters Kluwer Deutschland — all services booked at 19% VAT.",
+            ),
+        ]
+        for r in demo_rules:
+            store.add(r)
+        store.save()
+    st.session_state.store = store
 
 if "history" not in st.session_state:
     st.session_state.history = [{"step": "Baseline", "rate": None}]
