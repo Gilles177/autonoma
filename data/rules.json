@@ -1,0 +1,28 @@
+[
+  {
+    "rule_id": "RULE-9E67CB6D",
+    "type": "duplicate_whitelist",
+    "target": {
+      "supplier_id": "SUP0014"
+    },
+    "payload": {},
+    "rationale": "Legitimate split invoices from SAP Deutschland SE",
+    "source_exception_id": "INV000251-duplicate",
+    "source_question": "Confirm: is INV000251 a duplicate of INV000003, or a legitimate second invoice?",
+    "source_answer": "Legitimate split invoices from SAP Deutschland SE",
+    "created_at": "2026-10-14T17:28:17.073503Z"
+  },
+  {
+    "rule_id": "RULE-ADC83CD1",
+    "type": "duplicate_block",
+    "target": {
+      "invoice_id": "INV000253"
+    },
+    "payload": {},
+    "rationale": "Confirmed duplicate \u2014 blocked from payment",
+    "source_exception_id": "INV000253-duplicate",
+    "source_question": "Confirm: is INV000253 a duplicate of INV000076, or a legitimate second invoice?",
+    "source_answer": "Confirmed duplicate \u2014 blocked from payment",
+    "created_at": "2026-10-14T17:28:20.296034Z"
+  }
+]
