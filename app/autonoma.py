@@ -19,7 +19,7 @@ from src.rules.engine import detect_all
 from src.rules.loop import apply_rules, automation_rate
 from src.rules.models import Rule, RuleType
 from src.rules.store import RuleStore
-from src.ui.theme import inject_theme, render_hud, render_rate_bar
+from src.ui.theme import inject_theme, render_hud, render_rate_bar, render_ticker
 
 st.set_page_config(
     page_title="Autonoma — Autonomous Accounts Payable",
@@ -75,21 +75,19 @@ if st.session_state.history[-1]["rate"] != rate_now:
 
 head_left, head_right = st.columns([6, 1])
 with head_left:
-    render_hud(
-        tag=t("hud.tag"),
-        status=t("hud.status"),
-        ticker_items=[
-            "SYS::OK",
-            f"AGENTS::24",
-            f"INVOICES::{len(ds['invoices'])}",
-            f"RULES::{len(store)}",
-            f"AUTOMATION::{rate_now:.1f}%",
-            "LATENCY::42ms",
-            "UPTIME::99.98%",
-            "REGION::DACH",
-            "MODE::AUTONOMOUS",
-        ],
-    )
+    render_hud(tag=t("hud.tag"), status=t("hud.status"))
+
+render_ticker([
+    "SYS::OK",
+    "AGENTS::24",
+    f"INVOICES::{len(ds['invoices'])}",
+    f"RULES::{len(store)}",
+    f"AUTOMATION::{rate_now:.1f}%",
+    "LATENCY::42ms",
+    "UPTIME::99.98%",
+    "REGION::DACH",
+    "MODE::AUTONOMOUS",
+])
 with head_right:
     choice = st.radio(
         "lang",
@@ -398,12 +396,29 @@ with tab_report:
     cD.metric(t("report.resolved"), len(report.resolved))
 
     st.divider()
-    if st.button(t("report.generate")):
-        md = report.to_markdown()
+
+    from src.reports.pdf import build_pdf
+
+    md = report.to_markdown()
+    pdf_bytes = build_pdf(report)
+    stamp = report.generated_at.strftime("%Y%m%d-%H%M")
+
+    dl1, dl2 = st.columns(2)
+    with dl1:
         st.download_button(
-            label=t("report.download"),
+            label="Download Markdown",
             data=md,
-            file_name=f"autonoma-sprint-{report.generated_at.strftime('%Y%m%d-%H%M')}.md",
+            file_name=f"autonoma-sprint-{stamp}.md",
             mime="text/markdown",
+            use_container_width=True,
         )
-    st.markdown(report.to_markdown())
+    with dl2:
+        st.download_button(
+            label="Download PDF",
+            data=pdf_bytes,
+            file_name=f"autonoma-sprint-{stamp}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+    st.markdown(md)

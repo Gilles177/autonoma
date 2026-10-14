@@ -4,3 +4,4 @@ plotly
 pydantic
 python-dotenv
 openpyxl
+fpdf2
