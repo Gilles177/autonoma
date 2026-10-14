@@ -19,7 +19,7 @@ from src.rules.engine import detect_all
 from src.rules.loop import apply_rules, automation_rate
 from src.rules.models import Rule, RuleType
 from src.rules.store import RuleStore
-from src.ui.theme import inject_theme, render_hud
+from src.ui.theme import inject_theme, render_hud, render_rate_bar
 
 st.set_page_config(
     page_title="Autonoma — Autonomous Accounts Payable",
@@ -75,7 +75,21 @@ if st.session_state.history[-1]["rate"] != rate_now:
 
 head_left, head_right = st.columns([6, 1])
 with head_left:
-    render_hud(tag=t("hud.tag"), status=t("hud.status"))
+    render_hud(
+        tag=t("hud.tag"),
+        status=t("hud.status"),
+        ticker_items=[
+            "SYS::OK",
+            f"AGENTS::24",
+            f"INVOICES::{len(ds['invoices'])}",
+            f"RULES::{len(store)}",
+            f"AUTOMATION::{rate_now:.1f}%",
+            "LATENCY::42ms",
+            "UPTIME::99.98%",
+            "REGION::DACH",
+            "MODE::AUTONOMOUS",
+        ],
+    )
 with head_right:
     choice = st.radio(
         "lang",
@@ -124,6 +138,8 @@ c5.metric(
     help=t("metric.invoices_help"),
 )
 
+st.write("")
+render_rate_bar(rate=rate_now, target=95.0, label=t("metric.automation_rate"))
 st.write("")
 
 # ---------------------------------------------------------------------------
