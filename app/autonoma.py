@@ -87,6 +87,7 @@ render_ticker([
     "UPTIME::99.98%",
     "REGION::DACH",
     "MODE::AUTONOMOUS",
+    "TARGET::ERP",
 ])
 with head_right:
     choice = st.radio(
@@ -422,3 +423,17 @@ with tab_report:
         )
 
     st.markdown(md)
+# ---------------------------------------------------------------------------
+# Footer
+# ---------------------------------------------------------------------------
+
+st.markdown(
+    f"""
+    <div class="autonoma-footer">
+      <div class="autonoma-footer-line"></div>
+      <div class="autonoma-footer-tagline">{t('footer.tagline')}</div>
+      <div class="autonoma-footer-by">{t('footer.made_by')}</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)

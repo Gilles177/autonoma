@@ -560,6 +560,34 @@ h3 {
     90%  { opacity: 1; }
     to   { transform: translateY(-110vh); opacity: 0; }
 }
+/* ---------- Footer ---------- */
+.autonoma-footer {
+    margin-top: 60px;
+    padding: 24px 0 10px 0;
+    text-align: center;
+    animation: fadeInUp 0.9s ease both;
+}
+.autonoma-footer-line {
+    height: 1px;
+    width: 60%;
+    margin: 0 auto 18px auto;
+    background: linear-gradient(90deg,
+        transparent, rgba(56,189,248,0.35), transparent);
+}
+.autonoma-footer-tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+.autonoma-footer-by {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    color: var(--cyan-soft);
+}
 """
 
 

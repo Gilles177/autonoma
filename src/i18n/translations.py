@@ -5,7 +5,7 @@ from typing import Callable
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "EN": {
         # HUD
-        "hud.tag": "AUTONOMOUS ACCOUNTS PAYABLE · DACH",
+        "hud.tag": "AUTONOMOUS ERP AUTOMATION · P2P · DACH",
         "hud.status": "LIVE",
         "hud.sector": "SECTOR",
         # Header
@@ -69,9 +69,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "toast.rule_learned": "Rule learned",
         "toast.rule_removed": "Rule removed",
         "toast.rules_reset": "All rules reset",
+        "footer.made_by": "Made with ❤️ in Germany by Gilles Youtebo",
+        "footer.tagline": "Autonoma · Autonomous ERP Automation for DACH",
     },
     "DE": {
-        "hud.tag": "AUTONOME KREDITORENBUCHHALTUNG · DACH",
+        "hud.tag": "AUTONOME ERP-AUTOMATISIERUNG · P2P · DACH",
         "hud.status": "AKTIV",
         "hud.sector": "SEKTOR",
         "app.caption": "Verwandeln Sie jede Rechnungsausnahme in eine dauerhafte Regel.",
@@ -126,6 +128,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "toast.rule_learned": "Regel gelernt",
         "toast.rule_removed": "Regel entfernt",
         "toast.rules_reset": "Alle Regeln zurückgesetzt",
+        "footer.made_by": "Mit ❤️ in Deutschland gemacht von Gilles Youtebo",
+        "footer.tagline": "Autonoma · Autonome ERP-Automatisierung für DACH",
     },
 }
 
