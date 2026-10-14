@@ -29,6 +29,13 @@ def _ex(
     question: str | None = None,
     detail: dict | None = None,
 ) -> InvoiceException:
+    d = dict(detail or {})
+    d.setdefault("supplier_id", invoice.supplier_id)
+    d.setdefault("supplier_name", invoice.supplier_name)
+    d.setdefault("currency", invoice.currency.value)
+    d.setdefault("gross_amount", invoice.gross_amount)
+    if invoice.po_number:
+        d.setdefault("po_number", invoice.po_number)
     return InvoiceException(
         exception_id=f"{invoice.invoice_id}-{kind.value}",
         invoice_id=invoice.invoice_id,
@@ -36,7 +43,7 @@ def _ex(
         severity=severity,
         message=message,
         resolution_question=question,
-        detail=detail or {},
+        detail=d,
     )
 
 

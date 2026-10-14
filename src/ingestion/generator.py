@@ -78,10 +78,8 @@ def build_purchase_orders(
     for i in range(1, n + 1):
         s = rng.choice(suppliers)
         net = _round2(rng.uniform(200, 25_000))
-        if s.country == Country.DE:
-            vat = rng.choice([0.07, 0.19])
-        else:
-            vat = rng.choice([0.026, 0.081])
+        from src.core.constants import EXPECTED_VAT_BY_CATEGORY
+        vat = EXPECTED_VAT_BY_CATEGORY[(s.country.value, s.category)]
         pos.append(
             PurchaseOrder(
                 po_number=f"PO{i:06d}",
@@ -125,20 +123,22 @@ def build_invoices(
     rng: random.Random,
     n: int,
 ) -> list[Invoice]:
-    suppliers_by_id = {s.supplier_id: s for s in suppliers}
     pos_by_supplier: dict[str, list[PurchaseOrder]] = {}
     for po in pos:
         pos_by_supplier.setdefault(po.supplier_id, []).append(po)
+    # Shuffle pools so consumption order is random
+    for pool in pos_by_supplier.values():
+        rng.shuffle(pool)
 
     invoices: list[Invoice] = []
     for i in range(1, n + 1):
         s = rng.choice(suppliers)
         available_pos = pos_by_supplier.get(s.supplier_id, [])
 
-        # 80% have a PO, 20% don't (missing PO candidates)
+        # 80% have a PO (if any are still unconsumed), 20% don't
         po: PurchaseOrder | None = None
         if available_pos and rng.random() < 0.8:
-            po = rng.choice(available_pos)
+            po = available_pos.pop()          # consume it — never reused
 
         if po is not None:
             # 90% match the PO net exactly, 10% drift (price mismatch)
@@ -205,10 +205,10 @@ def build_invoices(
             )
         )
 
-    # Inject explicit duplicates: 4% of invoices get a near-copy 5-20 days later
+    # Inject explicit duplicates: 3% of invoices get a near-copy 5-20 days later
     dupes: list[Invoice] = []
     for inv in invoices:
-        if rng.random() < 0.04:
+        if rng.random() < 0.03:
             dup = inv.model_copy(
                 update={
                     "invoice_id": f"INV{len(invoices) + len(dupes) + 1:06d}",
@@ -224,7 +224,7 @@ def build_invoices(
 def generate_dataset(n_invoices: int = 250, seed: int = 42) -> dict:
     rng = random.Random(seed)
     suppliers = build_suppliers(rng)
-    pos = build_purchase_orders(suppliers, rng, n=180)
+    pos = build_purchase_orders(suppliers, rng, n=300)
     grns = build_goods_receipts(pos, rng, coverage=0.85)
     invoices = build_invoices(suppliers, pos, grns, rng, n=n_invoices)
     return {

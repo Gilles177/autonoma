@@ -10,8 +10,8 @@ PO_REQUIRED_THRESHOLD = {
 }
 
 PRICE_TOLERANCE_PCT = 0.02          # 2% tolerance on PO vs invoice
-DUPLICATE_WINDOW_DAYS = 30          # look-back for fuzzy duplicates
-AMOUNT_TOLERANCE_FOR_DUP = 0.01     # 1% amount tolerance for duplicate suspicion
+DUPLICATE_WINDOW_DAYS = 21          # look-back for fuzzy duplicates
+AMOUNT_TOLERANCE_FOR_DUP = 0.005     # 0.5% is stricter amount tolerance for duplicate suspicion
 
 # Typical VAT rate per supplier category (for ambiguity detection)
 EXPECTED_VAT_BY_CATEGORY = {

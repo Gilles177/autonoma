@@ -89,3 +89,5 @@ class InvoiceException(BaseModel):
     message: str
     resolution_question: Optional[str] = None
     detail: dict[str, Any] = Field(default_factory=dict)
+    auto_resolved: bool = False
+    resolved_by_rule_id: Optional[str] = None
