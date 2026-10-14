@@ -321,6 +321,11 @@ with tab_queue:
     if not surviving:
         st.success(t("queue.empty"))
     else:
+        st.info(
+            "👉 **Try it:** open any exception below and answer the question. "
+            "Your decision becomes a permanent rule, and the automation rate "
+            "at the top of the page moves immediately."
+        )
         sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         sorted_ex = sorted(surviving, key=lambda e: (sev_order.get(e.severity.value, 9), e.type.value))
         sev_icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
